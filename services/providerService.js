@@ -29,8 +29,39 @@ const providerRoles = {
   gemini_flash_lite: "ultra-fast, concise, and stability-oriented"
 };
 
-const PROVIDER_TIMEOUT_MS = 30000;
+const PROVIDER_TIMEOUT_MS = Number(process.env.PROVIDER_TIMEOUT_MS || 90000);
 const OVERLOAD_RETRY_DELAYS_MS = [2000, 4000, 8000];
+
+function getMaxOutputTokens(stage, length = "Medium") {
+  const byLength = {
+    Short: { draft: 700, revision: 800, judge: 1000 },
+    Medium: { draft: 1100, revision: 1200, judge: 1500 },
+    Large: { draft: 1500, revision: 1700, judge: 2200 },
+    "Extra Long": { draft: 2100, revision: 2400, judge: 3000 }
+  };
+  const stageCaps = byLength[length] || byLength.Medium;
+  return stageCaps[stage] || 700;
+}
+
+function formatLinkList(label, links = []) {
+  const cleaned = Array.isArray(links)
+    ? links.map((entry) => String(entry).trim()).filter(Boolean).slice(0, 6)
+    : [];
+
+  if (cleaned.length === 0) {
+    return `${label}: none provided. Recommend natural placeholder opportunities only when useful.`;
+  }
+
+  return `${label}: ${cleaned.join(" | ")}`;
+}
+
+function buildLinkingGuidance(linking = {}) {
+  return [
+    formatLinkList("Internal links", linking.internalLinks),
+    formatLinkList("External links", linking.externalLinks),
+    formatLinkList("3rd party reference links", linking.referenceLinks)
+  ].join("\n");
+}
 
 function getSegmentGuidance(segment) {
   const guidance = {
@@ -78,11 +109,13 @@ function buildModulePrompt({
   intent,
   length,
   tonality,
+  linking,
   reworkBrief = ""
 }) {
   const roleStyle = providerRoles[providerId] || "balanced";
   const segmentGuidance = getSegmentGuidance(segment);
   const controlGuidance = getControlGuidance({ intent, length, tonality });
+  const linkingGuidance = buildLinkingGuidance(linking);
   const reworkGuidance = reworkBrief
     ? `This is a rework pass because the previous consensus was rejected. Fix these weaknesses: ${reworkBrief}`
     : "";
@@ -113,16 +146,31 @@ function buildModulePrompt({
         "You are part of an adversarial consensus engine for professional blog writing.",
         `Your debating role is ${roleStyle}.`,
         "Produce a polished, engaging blog draft that can survive criticism from competing models.",
-        "Prioritize a strong hook, clear narrative flow, useful takeaways, accurate claims, and reader-friendly structure.",
-        "Avoid generic filler, exaggerated claims, and unsupported statistics.",
+        "Prioritize fast, clean, paragraph-led writing over exhaustive coverage.",
+        "The final blog must feel human-written, professional, plagiarism-free, and modern SEO optimized.",
+        "Use the focus keyword naturally only 4-5 times throughout the blog; avoid keyword stuffing, spammy optimization, generic filler, exaggerated claims, and unsupported statistics.",
+        "Use clean markdown with one H1 heading and useful H2 headings. Keep paragraphs balanced and readable, with limited bullets only when they genuinely help.",
         `Audience level: ${segment}. ${segmentGuidance}`,
         controlGuidance,
         reworkGuidance
       ].join(" "),
       user: [
         `Blog task: ${topic}`,
-        "Deliver a blog-ready draft with: headline, intro hook, clear sections, practical insights, and a concise conclusion.",
-        "Keep the writing engaging while preserving accuracy and adversarial defensibility."
+        "Deliver the blog in this exact order:",
+        "SEO Meta Title",
+        "SEO Meta Description",
+        "SEO-Friendly Slug",
+        "Tags: [tag1, tag2, tag3]",
+        "Internal Links",
+        "External Links",
+        "3rd Party Reference Links",
+        "# H1 Heading",
+        "## H2 sections with paragraph-based content",
+        "Conclusion",
+        "Linking inputs:",
+        linkingGuidance,
+        "Use supplied links naturally in the linking sections and mention where they fit in the article. If no links are supplied, recommend sensible placeholder link targets without inventing fake URLs.",
+        "Keep the writing informative, engaging, well organized, and easy to read."
       ].join("\n")
     };
   }
@@ -145,7 +193,7 @@ function buildModulePrompt({
   };
 }
 
-function buildCritiquePrompt({ providerId, topic, category, segment, peerDrafts, intent, length, tonality }) {
+function buildCritiquePrompt({ providerId, topic, category, segment, peerDrafts, intent, length, tonality, linking }) {
   return {
     system: [
       "You are a critical reviewer in an adversarial consensus engine.",
@@ -157,6 +205,7 @@ function buildCritiquePrompt({ providerId, topic, category, segment, peerDrafts,
       `Category: ${category}`,
       `Audience: ${segment}`,
       getControlGuidance({ intent, length, tonality }),
+      category === "Blog" ? `Blog linking requirements:\n${buildLinkingGuidance(linking)}` : "",
       "Review the following competing drafts and return concise critiques for each one.",
       peerDrafts
         .map((draft, index) => `Draft ${index + 1} from ${draft.providerLabel}:\n${draft.draft}`)
@@ -166,7 +215,7 @@ function buildCritiquePrompt({ providerId, topic, category, segment, peerDrafts,
   };
 }
 
-function buildRevisionPrompt({ draftResponse, critiques, topic, category, segment, intent, length, tonality }) {
+function buildRevisionPrompt({ draftResponse, critiques, topic, category, segment, intent, length, tonality, linking }) {
   return {
     system: [
       "You are revising your own answer after receiving adversarial critiques.",
@@ -177,6 +226,7 @@ function buildRevisionPrompt({ draftResponse, critiques, topic, category, segmen
       `Category: ${category}`,
       `Audience: ${segment}`,
       getControlGuidance({ intent, length, tonality }),
+      category === "Blog" ? `Preserve the required SEO sections, H1/H2 structure, natural keyword density, and linking sections.\n${buildLinkingGuidance(linking)}` : "",
       "Original draft:",
       draftResponse.draft,
       "Critiques to address:",
@@ -186,7 +236,7 @@ function buildRevisionPrompt({ draftResponse, critiques, topic, category, segmen
   };
 }
 
-function buildJudgePrompt({ topic, category, segment, debateRounds, intent, length, tonality }) {
+function buildJudgePrompt({ topic, category, segment, debateRounds, intent, length, tonality, linking }) {
   return {
     system: [
       "You are the judge in an adversarial consensus engine.",
@@ -194,7 +244,7 @@ function buildJudgePrompt({ topic, category, segment, debateRounds, intent, leng
       "Eliminate groupthink, discard weak or repetitive claims, and preserve only the strongest justified content.",
       "For research tasks, prefer formal precision and citation-ready structure.",
       "For homework tasks, prefer clarity, pedagogy, and correct sequencing.",
-      "For blog tasks, prefer engaging structure, strong hooks, useful takeaways, and clean reader flow.",
+      "For blog tasks, prefer engaging structure, strong hooks, useful takeaways, clean reader flow, modern SEO discipline, and the required metadata plus linking sections.",
       "You must give a strict consensus score from 0 to 100 based on agreement, factual stability, and remaining uncertainty."
     ].join(" "),
     user: [
@@ -202,6 +252,7 @@ function buildJudgePrompt({ topic, category, segment, debateRounds, intent, leng
       `Category: ${category}`,
       `Audience: ${segment}`,
       getControlGuidance({ intent, length, tonality }),
+      category === "Blog" ? `Required blog linking inputs:\n${buildLinkingGuidance(linking)}` : "",
       "Competing drafts and their revisions:",
       debateRounds
         .map(
@@ -241,7 +292,7 @@ function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-async function callOpenAI({ model, system, user, temperature = 0.4 }) {
+async function callOpenAI({ model, system, user, temperature = 0.4, maxOutputTokens }) {
   const response = await fetchWithTimeout("https://api.openai.com/v1/chat/completions", {
     method: "POST",
     headers: {
@@ -251,6 +302,7 @@ async function callOpenAI({ model, system, user, temperature = 0.4 }) {
     body: JSON.stringify({
       model,
       temperature,
+      ...(maxOutputTokens ? { max_tokens: maxOutputTokens } : {}),
       messages: [
         { role: "system", content: system },
         { role: "user", content: user }
@@ -265,7 +317,7 @@ async function callOpenAI({ model, system, user, temperature = 0.4 }) {
   return payload.choices?.[0]?.message?.content?.trim() || "";
 }
 
-async function callGemini({ model, system, user, temperature = 0.4 }) {
+async function callGemini({ model, system, user, temperature = 0.4, maxOutputTokens }) {
   for (let attempt = 0; attempt <= OVERLOAD_RETRY_DELAYS_MS.length; attempt += 1) {
     const response = await fetchWithTimeout(
       `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${process.env.GEMINI_API_KEY}`,
@@ -274,7 +326,10 @@ async function callGemini({ model, system, user, temperature = 0.4 }) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           system_instruction: { parts: [{ text: system }] },
-          generationConfig: { temperature },
+          generationConfig: {
+            temperature,
+            ...(maxOutputTokens ? { maxOutputTokens } : {})
+          },
           contents: [{ role: "user", parts: [{ text: user }] }]
         })
       }
@@ -293,7 +348,7 @@ async function callGemini({ model, system, user, temperature = 0.4 }) {
   throw new Error("Gemini request failed after retries.");
 }
 
-async function callProvider({ providerId, system, user, temperature }) {
+async function callProvider({ providerId, system, user, temperature, maxOutputTokens }) {
   const providerCatalog = getProviderCatalog();
   const model = providerCatalog[providerId]?.model;
   if (!model) {
@@ -303,9 +358,9 @@ async function callProvider({ providerId, system, user, temperature }) {
     throw new Error(`Missing API key for provider: ${providerId}`);
   }
   if (providerId === "openai") {
-    return callOpenAI({ model, system, user, temperature });
+    return callOpenAI({ model, system, user, temperature, maxOutputTokens });
   }
-  return callGemini({ model, system, user, temperature });
+  return callGemini({ model, system, user, temperature, maxOutputTokens });
 }
 
 function splitCritiques(rawText, peers) {
@@ -374,6 +429,7 @@ export async function generateProviderDraft({
   intent,
   length,
   tonality,
+  linking,
   reworkBrief
 }) {
   const prompt = buildModulePrompt({
@@ -384,13 +440,15 @@ export async function generateProviderDraft({
     intent,
     length,
     tonality,
+    linking,
     reworkBrief
   });
   const draft = await callProvider({
     providerId,
     system: prompt.system,
     user: prompt.user,
-    temperature: 0.45
+    temperature: 0.45,
+    maxOutputTokens: getMaxOutputTokens("draft", length)
   });
   return {
     providerId,
@@ -402,7 +460,7 @@ export async function generateProviderDraft({
   };
 }
 
-export async function critiqueDrafts({ providerId, peers, topic, category, segment, intent, length, tonality }) {
+export async function critiqueDrafts({ providerId, peers, topic, category, segment, intent, length, tonality, linking }) {
   const prompt = buildCritiquePrompt({
     providerId,
     topic,
@@ -411,13 +469,15 @@ export async function critiqueDrafts({ providerId, peers, topic, category, segme
     peerDrafts: peers,
     intent,
     length,
-    tonality
+    tonality,
+    linking
   });
   const critiqueText = await callProvider({
     providerId,
     system: prompt.system,
     user: prompt.user,
-    temperature: 0.2
+    temperature: 0.2,
+    maxOutputTokens: 500
   });
   return splitCritiques(critiqueText, peers).map((entry) => ({
     from: providerId,
@@ -426,7 +486,7 @@ export async function critiqueDrafts({ providerId, peers, topic, category, segme
   }));
 }
 
-export async function reviseDraft({ draftResponse, critiques, topic, category, segment, intent, length, tonality }) {
+export async function reviseDraft({ draftResponse, critiques, topic, category, segment, intent, length, tonality, linking }) {
   const prompt = buildRevisionPrompt({
     draftResponse,
     critiques,
@@ -435,13 +495,15 @@ export async function reviseDraft({ draftResponse, critiques, topic, category, s
     segment,
     intent,
     length,
-    tonality
+    tonality,
+    linking
   });
   return callProvider({
     providerId: draftResponse.providerId,
     system: prompt.system,
     user: prompt.user,
-    temperature: 0.35
+    temperature: 0.35,
+    maxOutputTokens: getMaxOutputTokens("revision", length)
   });
 }
 
@@ -452,7 +514,8 @@ export async function judgeConsensus(input) {
     providerId: judgeProviderId,
     system: prompt.system,
     user: prompt.user,
-    temperature: 0.7
+    temperature: 0.55,
+    maxOutputTokens: getMaxOutputTokens("judge", input.length)
   });
   const parsed = splitJudgeOutput(outputText);
   return {

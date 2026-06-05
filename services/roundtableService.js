@@ -12,10 +12,36 @@ import {
 const defaultProviderOrder = ["openai", "gemini_flash", "gemini_flash_lite"];
 const DEFAULT_CREDITS = 10;
 const CONSENSUS_THRESHOLD = 90;
-const MAX_CONSENSUS_ATTEMPTS = 2;
+const MAX_CONSENSUS_ATTEMPTS = Number(process.env.MAX_CONSENSUS_ATTEMPTS || 1);
 
-function normalizeControls({ intent = "Research", length = "Medium", tonality = "Academic" } = {}) {
-  return { intent, length, tonality };
+function normalizeLinkList(links = []) {
+  if (Array.isArray(links)) {
+    return links.map((entry) => String(entry).trim()).filter(Boolean).slice(0, 6);
+  }
+
+  return String(links)
+    .split(/\r?\n|,/)
+    .map((entry) => entry.trim())
+    .filter(Boolean)
+    .slice(0, 6);
+}
+
+function normalizeControls({
+  intent = "Research",
+  length = "Medium",
+  tonality = "Academic",
+  linking = {}
+} = {}) {
+  return {
+    intent,
+    length,
+    tonality,
+    linking: {
+      internalLinks: normalizeLinkList(linking.internalLinks),
+      externalLinks: normalizeLinkList(linking.externalLinks),
+      referenceLinks: normalizeLinkList(linking.referenceLinks)
+    }
+  };
 }
 
 function pickProviders(requestedProviders = []) {
@@ -579,6 +605,7 @@ export async function runRoundtableGeneration({
   topic,
   category,
   segment,
+  linking,
   providers,
   intent,
   length,
@@ -606,7 +633,7 @@ export async function runRoundtableGeneration({
     );
   }
 
-  const controls = normalizeControls({ intent, length, tonality });
+  const controls = normalizeControls({ intent, length, tonality, linking });
   const { acceptedAttempt, attempts } = await runGuardedConsensus({
     topic,
     category,

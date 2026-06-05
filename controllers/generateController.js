@@ -16,7 +16,8 @@ export async function generateArticle(req, res) {
     providers,
     intent = "Research",
     length = "Medium",
-    tonality = "Academic"
+    tonality = "Academic",
+    linking = {}
   } =
     req.body;
 
@@ -33,7 +34,8 @@ export async function generateArticle(req, res) {
       providers,
       intent,
       length,
-      tonality
+      tonality,
+      linking
     });
 
     return res.json({
@@ -74,7 +76,8 @@ export async function streamGenerateArticle(req, res) {
     providers,
     intent = "Research",
     length = "Medium",
-    tonality = "Academic"
+    tonality = "Academic",
+    linking = {}
   } =
     req.body;
 
@@ -105,6 +108,7 @@ export async function streamGenerateArticle(req, res) {
       intent,
       length,
       tonality,
+      linking,
       onEvent(event) {
         writeSse(res, "roundtable", event);
       }
