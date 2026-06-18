@@ -8,7 +8,7 @@ function getHeader(req, name) {
   return req.headers[name] || req.headers[name.toLowerCase()];
 }
 
-export function handleClerkWebhook(req, res) {
+export async function handleClerkWebhook(req, res) {
   const secret = process.env.CLERK_WEBHOOK_SECRET;
   if (!secret) {
     return res.status(500).json({ error: "Missing Clerk webhook secret." });
@@ -37,7 +37,7 @@ export function handleClerkWebhook(req, res) {
           (entry) => entry.id === event.data.primary_email_address_id
         )?.email_address || event.data.email_addresses?.[0]?.email_address || "";
 
-      const user = syncClerkUser({
+      const user = await syncClerkUser({
         clerkId: event.data.id,
         email: primaryEmail,
         firstName: event.data.first_name || "",
@@ -48,7 +48,7 @@ export function handleClerkWebhook(req, res) {
     }
 
     if (event.type === "user.deleted") {
-      deleteClerkUser(event.data.id);
+      await deleteClerkUser(event.data.id);
       return res.status(200).json({ status: "deleted" });
     }
 

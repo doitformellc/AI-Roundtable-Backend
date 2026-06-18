@@ -1,0 +1,50 @@
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model User {
+  id             String        @id @default(uuid())
+  clerk_id       String        @unique
+  email          String
+  first_name     String?       @default("")
+  last_name      String?       @default("")
+  credit_balance Int           @default(10)
+  transactions   Transaction[]
+  articles       Article[]
+
+  @@map("users")
+}
+
+model Transaction {
+  id            String   @id @default(uuid())
+  user_id       String
+  user          User     @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  amount        Float    @default(0)
+  credits_added Int
+  timestamp     DateTime @default(now())
+
+  @@map("transactions")
+}
+
+model Article {
+  id                  String   @id @default(uuid())
+  user_id             String
+  user                User     @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  topic               String   @db.Text
+  final_output        String   @db.LongText
+  context_tree        Json
+  generation_controls Json
+  agent_logs          Json
+  credits_used        Int      @default(1)
+  status              String   @default("completed")
+  category            String
+  segment             String
+  created_at          DateTime @default(now())
+
+  @@map("articles")
+}
