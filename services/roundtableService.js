@@ -1,5 +1,5 @@
 import { v4 as uuidv4 } from "uuid";
-import { readDb, writeDb } from "../data/database.js";
+import prisma from "../data/prisma.js";
 import {
   critiqueDrafts,
   generateProviderDraft,
@@ -70,91 +70,120 @@ export function listProviderMetadata() {
   return getAvailableProviders();
 }
 
-export function findUserByClerkId(clerkId) {
-  const db = readDb();
-  return db.users.find((entry) => entry.clerk_id === clerkId);
+export async function findUserByClerkId(clerkId) {
+  return await prisma.user.findUnique({
+    where: { clerk_id: clerkId }
+  });
 }
 
-export function syncClerkUser({ clerkId, email, firstName = "", lastName = "" }) {
-  const db = readDb();
-  let user = db.users.find((entry) => entry.clerk_id === clerkId);
+export async function syncClerkUser({ clerkId, email, firstName = "", lastName = "" }) {
+  let user = await prisma.user.findUnique({
+    where: { clerk_id: clerkId }
+  });
 
   if (!user) {
-    user = {
-      id: uuidv4(),
-      clerk_id: clerkId,
-      email,
-      first_name: firstName,
-      last_name: lastName,
-      credit_balance: DEFAULT_CREDITS
-    };
-    db.users.push(user);
-    db.transactions.push({
-      id: uuidv4(),
-      user_id: user.id,
-      amount: 0,
-      credits_added: DEFAULT_CREDITS,
-      timestamp: new Date().toISOString()
+    user = await prisma.$transaction(async (tx) => {
+      const newUser = await tx.user.create({
+        data: {
+          clerk_id: clerkId,
+          email,
+          first_name: firstName,
+          last_name: lastName,
+          credit_balance: DEFAULT_CREDITS
+        }
+      });
+      await tx.transaction.create({
+        data: {
+          user_id: newUser.id,
+          amount: 0,
+          credits_added: DEFAULT_CREDITS
+        }
+      });
+      return newUser;
     });
   } else {
-    user.email = email || user.email;
-    user.first_name = firstName || user.first_name || "";
-    user.last_name = lastName || user.last_name || "";
+    user = await prisma.user.update({
+      where: { clerk_id: clerkId },
+      data: {
+        email: email || user.email,
+        first_name: firstName || user.first_name || "",
+        last_name: lastName || user.last_name || ""
+      }
+    });
   }
 
-  writeDb(db);
   return user;
 }
 
-export function deleteClerkUser(clerkId) {
-  const db = readDb();
-  const user = db.users.find((entry) => entry.clerk_id === clerkId);
-  if (!user) {
+export async function deleteClerkUser(clerkId) {
+  try {
+    await prisma.user.delete({
+      where: { clerk_id: clerkId }
+    });
+    return true;
+  } catch (error) {
     return false;
   }
-
-  db.users = db.users.filter((entry) => entry.clerk_id !== clerkId);
-  writeDb(db);
-  return true;
 }
 
-export function getUserSnapshot(clerkId) {
-  const db = readDb();
-  const user = db.users.find((entry) => entry.clerk_id === clerkId);
-  const articles = db.articles
-    .filter((article) => article.user_id === user?.id)
-    .sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+export async function getUserSnapshot(clerkId) {
+  const user = await prisma.user.findUnique({
+    where: { clerk_id: clerkId }
+  });
+  if (!user) {
+    return { user: null, articles: [] };
+  }
+  const articles = await prisma.article.findMany({
+    where: { user_id: user.id },
+    orderBy: { created_at: "desc" }
+  });
 
   return { user, articles };
 }
 
-export function purchaseCredits(clerkId, amount, creditsAdded) {
-  const db = readDb();
-  const user = db.users.find((entry) => entry.clerk_id === clerkId);
+export async function purchaseCredits(clerkId, amount, creditsAdded) {
+  return await prisma.$transaction(async (tx) => {
+    const user = await tx.user.findUnique({
+      where: { clerk_id: clerkId }
+    });
 
-  if (!user) {
-    throw new Error("User not found");
-  }
+    if (!user) {
+      throw new Error("User not found");
+    }
 
-  user.credit_balance += creditsAdded;
-  db.transactions.push({
-    id: uuidv4(),
-    user_id: user.id,
-    amount,
-    credits_added: creditsAdded,
-    timestamp: new Date().toISOString()
+    const updatedUser = await tx.user.update({
+      where: { clerk_id: clerkId },
+      data: {
+        credit_balance: {
+          increment: creditsAdded
+        }
+      }
+    });
+
+    await tx.transaction.create({
+      data: {
+        user_id: user.id,
+        amount,
+        credits_added: creditsAdded
+      }
+    });
+
+    return updatedUser;
   });
-
-  writeDb(db);
-  return user;
 }
 
-export function getArticleById(articleId, clerkId) {
-  const db = readDb();
-  const user = db.users.find((entry) => entry.clerk_id === clerkId);
-  return db.articles.find(
-    (article) => article.id === articleId && article.user_id === user?.id
-  );
+export async function getArticleById(articleId, clerkId) {
+  const user = await prisma.user.findUnique({
+    where: { clerk_id: clerkId }
+  });
+  if (!user) return null;
+
+  return await prisma.article.findFirst({
+    where: {
+      id: articleId,
+      user_id: user.id
+    }
+  });
 }
 
 function getProviderAttemptOrder(requestedProviders = []) {
@@ -612,8 +641,9 @@ export async function runRoundtableGeneration({
   tonality,
   onEvent
 }) {
-  const db = readDb();
-  const user = db.users.find((entry) => entry.clerk_id === clerkId);
+  const user = await prisma.user.findUnique({
+    where: { clerk_id: clerkId }
+  });
 
   if (!user) {
     throw new Error("User not found");
@@ -643,15 +673,6 @@ export async function runRoundtableGeneration({
     onEvent
   });
 
-  user.credit_balance -= creditsUsed;
-  onEvent?.({
-    type: "credit",
-    stage: "billing",
-    creditsUsed,
-    balanceAfter: user.credit_balance,
-    message: `${creditsUsed} credit deducted after successful consensus.`
-  });
-
   const contextTree = buildContextTree({
     topic,
     category,
@@ -660,53 +681,73 @@ export async function runRoundtableGeneration({
     finalOutput: acceptedAttempt.judgeResult.finalOutput
   });
 
-  const article = {
-    id: uuidv4(),
-    user_id: user.id,
-    topic,
-    final_output: acceptedAttempt.judgeResult.finalOutput,
-    context_tree: contextTree,
-    generation_controls: controls,
-    agent_logs: {
-      selectedProviders: acceptedAttempt.draftResponses.map((entry) => entry.providerId),
-      requestedProviders: selectedProviders,
-      providerFailures: acceptedAttempt.providerFailures,
-      modelBadges: acceptedAttempt.modelBadges,
-      debateTranscript: acceptedAttempt.debateTranscript,
-      consensusScore: acceptedAttempt.consensusScore,
-      consensusThreshold: CONSENSUS_THRESHOLD,
-      consensusAttempts: attempts.map((attempt) => ({
-        passLabel: attempt.passLabel,
-        consensusScore: attempt.consensusScore,
-        accepted: attempt.consensusScore >= CONSENSUS_THRESHOLD
-      })),
-      creditSummary: {
-        creditsUsed,
-        balanceAfter: user.credit_balance,
-        message: `${creditsUsed} credit deducted for this multi-agent consensus run.`
-      },
-      debateRounds: acceptedAttempt.debateRounds,
-      judge: acceptedAttempt.judgeResult,
-      refinementHistory: []
-    },
-    credits_used: creditsUsed,
-    status: "completed",
-    category,
-    segment,
-    created_at: new Date().toISOString()
-  };
+  const result = await prisma.$transaction(async (tx) => {
+    const updatedUser = await tx.user.update({
+      where: { id: user.id },
+      data: {
+        credit_balance: {
+          decrement: creditsUsed
+        }
+      }
+    });
 
-  db.articles.push(article);
-  db.transactions.push({
-    id: uuidv4(),
-    user_id: user.id,
-    amount: 0,
-    credits_added: -creditsUsed,
-    timestamp: new Date().toISOString()
+    const article = await tx.article.create({
+      data: {
+        id: uuidv4(),
+        user_id: user.id,
+        topic,
+        final_output: acceptedAttempt.judgeResult.finalOutput,
+        context_tree: contextTree,
+        generation_controls: controls,
+        agent_logs: {
+          selectedProviders: acceptedAttempt.draftResponses.map((entry) => entry.providerId),
+          requestedProviders: selectedProviders,
+          providerFailures: acceptedAttempt.providerFailures,
+          modelBadges: acceptedAttempt.modelBadges,
+          debateTranscript: acceptedAttempt.debateTranscript,
+          consensusScore: acceptedAttempt.consensusScore,
+          consensusThreshold: CONSENSUS_THRESHOLD,
+          consensusAttempts: attempts.map((attempt) => ({
+            passLabel: attempt.passLabel,
+            consensusScore: attempt.consensusScore,
+            accepted: attempt.consensusScore >= CONSENSUS_THRESHOLD
+          })),
+          creditSummary: {
+            creditsUsed,
+            balanceAfter: updatedUser.credit_balance,
+            message: `${creditsUsed} credit deducted for this multi-agent consensus run.`
+          },
+          debateRounds: acceptedAttempt.debateRounds,
+          judge: acceptedAttempt.judgeResult,
+          refinementHistory: []
+        },
+        credits_used: creditsUsed,
+        status: "completed",
+        category,
+        segment
+      }
+    });
+
+    await tx.transaction.create({
+      data: {
+        user_id: user.id,
+        amount: 0,
+        credits_added: -creditsUsed
+      }
+    });
+
+    return { article, creditBalance: updatedUser.credit_balance };
   });
-  writeDb(db);
 
-  return { article, creditBalance: user.credit_balance };
+  onEvent?.({
+    type: "credit",
+    stage: "billing",
+    creditsUsed,
+    balanceAfter: result.creditBalance,
+    message: `${creditsUsed} credit deducted after successful consensus.`
+  });
+
+  return result;
 }
 
 export async function refineArticleBlock({
@@ -716,15 +757,20 @@ export async function refineArticleBlock({
   instruction,
   onEvent
 }) {
-  const db = readDb();
-  const user = db.users.find((entry) => entry.clerk_id === clerkId);
-  const article = db.articles.find(
-    (entry) => entry.id === articleId && entry.user_id === user?.id
-  );
+  const user = await prisma.user.findUnique({
+    where: { clerk_id: clerkId }
+  });
 
   if (!user) {
     throw new Error("User not found");
   }
+
+  const article = await prisma.article.findFirst({
+    where: {
+      id: articleId,
+      user_id: user.id
+    }
+  });
 
   if (!article) {
     const error = new Error("Article not found");
@@ -744,8 +790,9 @@ export async function refineArticleBlock({
     throw error;
   }
 
-  if (!article.context_tree) {
-    article.context_tree = buildContextTree({
+  let contextTree = article.context_tree;
+  if (!contextTree) {
+    contextTree = buildContextTree({
       topic: article.topic,
       category: article.category,
       segment: article.segment,
@@ -754,17 +801,18 @@ export async function refineArticleBlock({
     });
   }
 
-  const block = article.context_tree.blocks.find((entry) => entry.id === blockId);
+  const block = contextTree.blocks?.find((entry) => entry.id === blockId);
   if (!block) {
     const error = new Error("Editable block not found");
     error.code = "BLOCK_NOT_FOUND";
     throw error;
   }
 
-  const selectedProviders = article.agent_logs?.selectedProviders?.length
-    ? article.agent_logs.selectedProviders
+  let agentLogs = article.agent_logs || {};
+  const selectedProviders = agentLogs.selectedProviders?.length
+    ? agentLogs.selectedProviders
     : pickProviders([]);
-  const controls = normalizeControls(article.generation_controls || article.context_tree.controls);
+  const controls = normalizeControls(article.generation_controls || contextTree.controls);
   const refinementTopic = [
     `Original document topic: ${article.topic}`,
     `Target block: ${block.title}`,
@@ -784,6 +832,7 @@ export async function refineArticleBlock({
     onEvent
   });
 
+  block.revision_history = block.revision_history || [];
   block.revision_history.push({
     id: uuidv4(),
     instruction,
@@ -793,20 +842,18 @@ export async function refineArticleBlock({
   });
   block.content = acceptedAttempt.judgeResult.finalOutput;
   block.updated_at = new Date().toISOString();
-  article.context_tree.updated_at = new Date().toISOString();
-  article.final_output = renderContextTree(article.context_tree);
+  contextTree.updated_at = new Date().toISOString();
+  const final_output = renderContextTree(contextTree);
 
-  user.credit_balance -= 1;
-  article.credits_used += 1;
-  article.agent_logs = {
-    ...article.agent_logs,
+  agentLogs = {
+    ...agentLogs,
     consensusScore: acceptedAttempt.consensusScore,
     debateTranscript: acceptedAttempt.debateTranscript,
     debateRounds: acceptedAttempt.debateRounds,
     modelBadges: acceptedAttempt.modelBadges,
     judge: acceptedAttempt.judgeResult,
     refinementHistory: [
-      ...(article.agent_logs?.refinementHistory || []),
+      ...(agentLogs.refinementHistory || []),
       {
         id: uuidv4(),
         blockId,
@@ -822,27 +869,51 @@ export async function refineArticleBlock({
     ],
     creditSummary: {
       creditsUsed: 1,
-      balanceAfter: user.credit_balance,
+      balanceAfter: user.credit_balance - 1,
       message: "1 credit deducted for this targeted Judge refinement."
     }
   };
 
-  db.transactions.push({
-    id: uuidv4(),
-    user_id: user.id,
-    amount: 0,
-    credits_added: -1,
-    timestamp: new Date().toISOString()
+  const result = await prisma.$transaction(async (tx) => {
+    const updatedUser = await tx.user.update({
+      where: { id: user.id },
+      data: {
+        credit_balance: {
+          decrement: 1
+        }
+      }
+    });
+
+    const updatedArticle = await tx.article.update({
+      where: { id: articleId },
+      data: {
+        final_output,
+        context_tree: contextTree,
+        agent_logs: agentLogs,
+        credits_used: {
+          increment: 1
+        }
+      }
+    });
+
+    await tx.transaction.create({
+      data: {
+        user_id: user.id,
+        amount: 0,
+        credits_added: -1
+      }
+    });
+
+    return { article: updatedArticle, creditBalance: updatedUser.credit_balance };
   });
-  writeDb(db);
 
   onEvent?.({
     type: "credit",
     stage: "billing",
     creditsUsed: 1,
-    balanceAfter: user.credit_balance,
+    balanceAfter: result.creditBalance,
     message: "1 credit deducted after successful targeted refinement."
   });
 
-  return { article, creditBalance: user.credit_balance };
+  return result;
 }

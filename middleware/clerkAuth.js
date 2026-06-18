@@ -12,10 +12,10 @@ function getBearerToken(headerValue = "") {
 export async function requireClerkUser(req, res, next) {
   if (process.env.BYPASS_AUTH === "true") {
     const bypassClerkId = process.env.BYPASS_CLERK_ID || "dev-bypass-user";
-    let user = findUserByClerkId(bypassClerkId);
+    let user = await findUserByClerkId(bypassClerkId);
 
     if (!user) {
-      user = syncClerkUser({
+      user = await syncClerkUser({
         clerkId: bypassClerkId,
         email: process.env.BYPASS_EMAIL || "dev@roundtable.local",
         firstName: "Dev",
@@ -43,10 +43,10 @@ export async function requireClerkUser(req, res, next) {
       return res.status(401).json({ error: "Invalid Clerk token." });
     }
 
-    let user = findUserByClerkId(clerkUserId);
+    let user = await findUserByClerkId(clerkUserId);
 
     if (!user) {
-      user = syncClerkUser({
+      user = await syncClerkUser({
         clerkId: clerkUserId,
         email: req.header("x-clerk-email") || payload.email || "",
         firstName: req.header("x-clerk-first-name") || "",

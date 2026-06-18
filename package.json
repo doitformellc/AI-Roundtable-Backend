@@ -5,13 +5,17 @@
   "type": "module",
   "scripts": {
     "dev": "node --watch server.js",
-    "start": "node server.js"
+    "start": "node server.js",
+    "db:migrate": "prisma migrate deploy",
+    "postinstall": "prisma generate"
   },
   "dependencies": {
     "@clerk/backend": "^1.22.0",
+    "@prisma/client": "^5.22.0",
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
     "express": "^4.19.2",
+    "prisma": "^5.22.0",
     "svix": "^1.58.0",
     "uuid": "^11.0.3"
   }
