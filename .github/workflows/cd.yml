@@ -1,0 +1,46 @@
+name: CD Pipeline
+
+on:
+  workflow_run:
+    workflows: ["CI Pipeline"]
+    types:
+     - completed
+
+jobs:
+  build:
+    runs-on: self-hosted
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v2
+
+    - name: Login to Docker Hub
+      run: echo "${{ secrets.DOCKER_PASSWORD }}" | sudo docker login -u "${{ secrets.DOCKER_USERNAME }}" --password-stdin
+
+    - name: Pull image from Docker Hub
+      run: sudo docker pull doitformellc/ai-roundtable-backend:latest  
+
+    - name: Stop and remove old container
+      run: sudo docker rm -f ai-roundtable-backend-container || true
+
+    - name: Run Docker Container
+      run: |
+        sudo docker run -d -p 4000:4000 --network ai-network --name ai-roundtable-backend-container \
+        -e PORT="4000" \
+        -e FRONTEND_URL="${{ secrets.FRONTEND_URL }}" \
+        -e BYPASS_AUTH="false" \
+        -e BYPASS_CLERK_ID="dev-bypass-user" \
+        -e BYPASS_EMAIL="dev@roundtable.local" \
+        -e CLERK_SECRET_KEY="${{ secrets.CLERK_SECRET_KEY }}" \
+        -e CLERK_WEBHOOK_SECRET="${{ secrets.CLERK_WEBHOOK_SECRET }}" \
+        -e OPENAI_API_KEY="${{ secrets.OPENAI_API_KEY }}" \
+        -e OPENAI_MODEL="gpt-4o" \
+        -e GEMINI_API_KEY="${{ secrets.GEMINI_API_KEY }}" \
+        -e GEMINI_20_FLASH_MODEL="gemini-2.0-flash" \
+        -e GEMINI_FLASH_LITE_MODEL="gemini-2.5-flash-lite" \
+        -e ANTHROPIC_API_KEY="${{ secrets.ANTHROPIC_API_KEY }}" \
+        -e XAI_API_KEY="${{ secrets.XAI_API_KEY }}" \
+        -e XAI_MODEL="grok-4-1-fast-reasoning" \
+        -e ENABLE_MOCK_PROVIDERS="true" \
+        doitformellc/ai-roundtable-backend
+

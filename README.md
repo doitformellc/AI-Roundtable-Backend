@@ -68,8 +68,11 @@ Before running the application, make sure you have:
    | `OPENAI_API_KEY` | API Key for OpenAI services (required if OpenAI agent is enabled). | `sk-proj-...` |
    | `OPENAI_MODEL` | The default OpenAI chat completion model to use. | `gpt-4o` |
    | `GEMINI_API_KEY` | API Key for Google Gemini (required if Gemini agents are enabled). | `AIzaSy...` |
-   | `GEMINI_MODEL` | The default Google Gemini model. | `gemini-2.5-flash` |
+   | `GEMINI_20_FLASH_MODEL` | The default Google Gemini Flash model. | `gemini-2.0-flash` |
    | `GEMINI_FLASH_LITE_MODEL`| The secondary, lightweight Gemini model. | `gemini-2.5-flash-lite` |
+   | `ANTHROPIC_API_KEY` | API Key for Anthropic services. | `sk-ant-...` |
+   | `XAI_API_KEY` | API Key for xAI services. | `xai-...` |
+   | `XAI_MODEL` | The default xAI model name. | `grok-4-1-fast-reasoning` |
    | `ENABLE_MOCK_PROVIDERS` | Enables local mock engines if LLM keys are missing. | `true` |
 
 > [!NOTE]  
