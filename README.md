@@ -22,7 +22,7 @@ The AI Roundtable Backend implements an adversarial consensus pipeline. It bring
   - **OpenAI API** (`gpt-4o` as a debater and primary Consensus Judge).
   - **Google Gemini API** (`gemini-2.5-flash` and `gemini-2.5-flash-lite` as debaters).
 - **Webhooks Handling:** [Svix](https://www.svix.com/) (`svix` v1.58.0) for verifying Clerk user-sync webhooks.
-- **Database & Storage:** Synchronous local JSON database ([database.js](file:///c:/Users/Admin/Desktop/AI-Roundtable-Backend/data/database.js)) writing to [db.json](file:///c:/Users/Admin/Desktop/AI-Roundtable-Backend/data/db.json).
+- **Database & Storage:** [MySQL](https://www.mysql.com/) database managed with [Prisma ORM](https://www.prisma.io/) (`prisma` and `@prisma/client` v5.22.0).
 - **Environment Management:** `dotenv` (`^16.4.5`)
 
 ---
@@ -71,6 +71,7 @@ Before running the application, make sure you have:
    | `GEMINI_MODEL` | The default Google Gemini model. | `gemini-2.5-flash` |
    | `GEMINI_FLASH_LITE_MODEL`| The secondary, lightweight Gemini model. | `gemini-2.5-flash-lite` |
    | `ENABLE_MOCK_PROVIDERS` | Enables local mock engines if LLM keys are missing. | `true` |
+   | `DATABASE_URL` | MySQL connection string for Prisma. | `mysql://user:pass@localhost:3306/db_name` |
 
 > [!NOTE]  
 > If `BYPASS_AUTH=true` is set, the server ignores Clerk session tokens and creates/re-uses a default developer profile with standard start credits, making frontend development much faster.
@@ -91,6 +92,21 @@ Starts the server normally:
 npm start
 ```
 
+### Database Setup & Migrations
+Ensure your database server is running and `DATABASE_URL` is set in your `.env` or `.env.local` file.
+
+1. **Deploy schema migrations:**
+   ```bash
+   npm run db:migrate
+   ```
+   *(For development sync without tracking migrations, run `npx prisma db push`)*
+
+2. **Migrate legacy JSON data (optional):**
+   If you have a legacy `data/db.json` file, run the migration script to populate MySQL:
+   ```bash
+   node scripts/migrateData.js
+   ```
+
 ### Docker Mode
 You can build and deploy the container image using the included `Dockerfile`:
 ```bash
@@ -108,16 +124,20 @@ docker run -p 4000:4000 --env-file .env ai-roundtable-backend
 │   ├── generateController.js
 │   ├── userController.js
 │   └── webhookController.js
-├── data/                   # File-based JSON database wrapper
-│   ├── database.js         # Read/write handlers
-│   └── db.json             # Actual database file (created on startup)
+├── data/                   # Database client instances
+│   └── prisma.js           # Prisma client singleton
 ├── middleware/             # Express middlewares
 │   └── clerkAuth.js        # Authentication check & User sync
+├── prisma/                 # Prisma configuration and migrations
+│   ├── migrations/         # SQL migration scripts
+│   └── schema.prisma       # Database schema models (User, Transaction, Article)
 ├── routes/                 # Express Router endpoint definitions
 │   ├── articleRoutes.js
 │   ├── generateRoutes.js
 │   ├── userRoutes.js
 │   └── webhookRoutes.js
+├── scripts/                # Database scripts
+│   └── migrateData.js      # Utility to migrate legacy JSON db data to MySQL
 ├── services/               # Core business & LLM consensus logic
 │   ├── providerService.js  # Low-level LLM prompt formatting & API dispatch
 │   └── roundtableService.js# High-level orchestrator & database controller
