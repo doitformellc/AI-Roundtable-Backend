@@ -6,7 +6,7 @@ dist/
 build/
 coverage/
 
-# Environment filess
+# Environment files
 .env
 .env.local
 .env.development.local
