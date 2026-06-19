@@ -10,7 +10,7 @@ function getBearerToken(headerValue = "") {
 }
 
 export async function requireClerkUser(req, res, next) {
-  if (process.env.BYPASS_AUTH === "true") {
+  if (process.env.BYPASS_AUTH === "true" && process.env.NODE_ENV !== "production") {
     const bypassClerkId = process.env.BYPASS_CLERK_ID || "dev-bypass-user";
     let user = await findUserByClerkId(bypassClerkId);
 

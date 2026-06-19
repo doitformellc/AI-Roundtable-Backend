@@ -76,6 +76,9 @@ Before running the application, make sure you have:
 > [!NOTE]  
 > If `BYPASS_AUTH=true` is set, the server ignores Clerk session tokens and creates/re-uses a default developer profile with standard start credits, making frontend development much faster.
 
+> [!IMPORTANT]  
+> In production environments, always set `NODE_ENV=production`. When running in production, the authentication bypass is programmatically disabled (regardless of the `BYPASS_AUTH` configuration), and valid Clerk JWT tokens verified against `CLERK_SECRET_KEY` are strictly required for all authenticated endpoints.
+
 ---
 
 ## 🏃 Running the Application
