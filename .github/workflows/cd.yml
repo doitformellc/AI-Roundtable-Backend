@@ -42,6 +42,6 @@ jobs:
         -e XAI_API_KEY="${{ secrets.XAI_API_KEY }}" \
         -e XAI_MODEL="grok-4-1-fast-reasoning" \
         -e ENABLE_MOCK_PROVIDERS="true" \
-        -e DATABASE_URL="mysql://root:prosperum%87@difmSi@prosperum-database:3306/roundtable" \
+        -e DATABASE_URL="${{ secrets.DATABASE_URL }}" \
         doitformellc/ai-roundtable-backend
 
