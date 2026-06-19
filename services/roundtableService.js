@@ -82,26 +82,38 @@ export async function syncClerkUser({ clerkId, email, firstName = "", lastName =
   });
 
   if (!user) {
-    user = await prisma.$transaction(async (tx) => {
-      const newUser = await tx.user.create({
-        data: {
-          clerk_id: clerkId,
-          email,
-          first_name: firstName,
-          last_name: lastName,
-          credit_balance: DEFAULT_CREDITS
-        }
+    try {
+      user = await prisma.$transaction(async (tx) => {
+        const newUser = await tx.user.create({
+          data: {
+            clerk_id: clerkId,
+            email,
+            first_name: firstName,
+            last_name: lastName,
+            credit_balance: DEFAULT_CREDITS
+          }
+        });
+        await tx.transaction.create({
+          data: {
+            user_id: newUser.id,
+            amount: 0,
+            credits_added: DEFAULT_CREDITS
+          }
+        });
+        return newUser;
       });
-      await tx.transaction.create({
-        data: {
-          user_id: newUser.id,
-          amount: 0,
-          credits_added: DEFAULT_CREDITS
-        }
-      });
-      return newUser;
-    });
-  } else {
+    } catch (err) {
+      if (err.code === "P2002") {
+        user = await prisma.user.findUnique({
+          where: { clerk_id: clerkId }
+        });
+      } else {
+        throw err;
+      }
+    }
+  }
+
+  if (user) {
     user = await prisma.user.update({
       where: { clerk_id: clerkId },
       data: {
