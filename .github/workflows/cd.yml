@@ -43,5 +43,7 @@ jobs:
         -e XAI_MODEL="grok-4-1-fast-reasoning" \
         -e ENABLE_MOCK_PROVIDERS="true" \
         -e DATABASE_URL="${{ secrets.DATABASE_URL }}" \
+        -e CLERK_SECRET_KEY="${{ secrets.CLERK_SECRET_KEY }}" \
+        -e CLERK_WEBHOOK_SECRET="${{ secrets.CLERK_WEBHOOK_SECRET }}" \
         doitformellc/ai-roundtable-backend
 
