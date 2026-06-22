@@ -36,7 +36,7 @@ jobs:
         -e OPENAI_API_KEY="${{ secrets.OPENAI_API_KEY }}" \
         -e OPENAI_MODEL="gpt-4o" \
         -e GEMINI_API_KEY="${{ secrets.GEMINI_API_KEY }}" \
-        -e GEMINI_20_FLASH_MODEL="gemini-2.0-flash" \
+        -e GEMINI_20_FLASH_MODEL="gemini-2.5-flash" \
         -e GEMINI_FLASH_LITE_MODEL="gemini-2.5-flash-lite" \
         -e ANTHROPIC_API_KEY="${{ secrets.ANTHROPIC_API_KEY }}" \
         -e XAI_API_KEY="${{ secrets.XAI_API_KEY }}" \
