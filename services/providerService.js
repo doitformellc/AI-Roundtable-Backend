@@ -5,8 +5,8 @@ function getProviderCatalog() {
       model: process.env.OPENAI_MODEL || "gpt-4o"
     },
     gemini_flash: {
-      label: "Gemini 2.0 Flash",
-      model: process.env.GEMINI_20_FLASH_MODEL || "gemini-2.0-flash"
+      label: "Gemini 2.5 Flash",
+      model: process.env.GEMINI_20_FLASH_MODEL || "gemini-2.5-flash"
     },
     gemini_flash_lite: {
       label: "Gemini 2.5 Flash-Lite",

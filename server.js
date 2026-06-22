@@ -33,10 +33,12 @@ const allowedOrigins = (process.env.FRONTEND_URL || "http://localhost:3000")
 app.use(
   cors({
     origin(origin, callback) {
+      console.log("CORS Check - Incoming Origin:", origin);
       if (!origin || allowedOrigins.includes(origin)) {
         return callback(null, true);
       }
 
+      console.error(`Blocked by CORS: Origin "${origin}" is not in allowed origins:`, allowedOrigins);
       return callback(new Error("CORS origin not allowed."));
     },
     credentials: true
