@@ -12,4 +12,4 @@ COPY . .
 
 EXPOSE 4000
 
-CMD ["sh", "-c", "npx prisma migrate deploy && npm start"]
+CMD ["sh", "-c", "npm run db:migrate || echo 'Prisma migration failed' && npm start"]
