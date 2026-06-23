@@ -11,7 +11,7 @@ import {
 
 const defaultProviderOrder = ["openai", "gemini_flash", "gemini_flash_lite"];
 const DEFAULT_CREDITS = 10;
-const CONSENSUS_THRESHOLD = 90;
+const CONSENSUS_THRESHOLD = 55;
 const MAX_CONSENSUS_ATTEMPTS = Number(process.env.MAX_CONSENSUS_ATTEMPTS || 1);
 
 function normalizeLinkList(links = []) {
